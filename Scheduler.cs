@@ -13,9 +13,9 @@ namespace break_bot
     {
         public delegate Task OnBreakCallback(SchedulerEventArgs eventArgs);
 
-        private SortedList<DateTime, TimeSpan> _breaks;
-
         private CancellationTokenSource _cancellationTokenSource;
+
+        private SortedList<DateTime, TimeSpan> _breaks;
 
         public Scheduler()
         {
@@ -33,56 +33,53 @@ namespace break_bot
 
         public static bool FromString(string str, out TimeSpan timeSpan)
         {
-            
             var r = DateTime.TryParseExact(str, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces,
-                out DateTime dateTime);
+                out var dateTime);
             timeSpan = dateTime.TimeOfDay;
             return r;
         }
-        
+
         public bool AddBreak(DateTime date, TimeSpan timeSpan)
         {
+            if (date < DateTime.Now) return false;
+            
             var couldAdd = _breaks.TryAdd(date, timeSpan);
-            if (couldAdd)
-            {
-                CancelToken();
-            }
+            if (couldAdd) CancelToken();
 
             return couldAdd;
         }
 
         public bool RemoveBreak(DateTime date)
         {
+            if (date < DateTime.Now) return false;
+            
             var couldRemove = _breaks.Remove(date);
-            if (couldRemove)
-            {
-                CancelToken();
-            }
+            if (couldRemove) CancelToken();
 
             return couldRemove;
         }
-
+        
+        // Cancellation callbacks are ran synchronously so we do this to stop locking up the message received handler.
         private void CancelToken()
         {
-            Task.Run(() => { _cancellationTokenSource.Cancel(); });
+            new Thread(() => { _cancellationTokenSource.Cancel(); }).Start();
         }
 
+        // Get a string which is a list of breaks to send as a message.
         public string GetBreaks()
         {
             var sb = new StringBuilder("```\n");
-            foreach (var (date, time) in _breaks)
-            {
-                sb.AppendLine($"{date:yyyy-MM-dd HH:mm} - {date + time:HH:mm}");
-            }
+            foreach (var (date, time) in _breaks) sb.AppendLine($"{date:yyyy-MM-dd HH:mm} - {date + time:HH:mm}");
 
             sb.Append("```");
 
             return sb.ToString();
         }
-        
+
         private void RemovePassedBreaks()
         {
-            var breaksToRemove = _breaks.Select(keyPair => keyPair.Key).Where(date => date < DateTime.Now).ToImmutableList();
+            var breaksToRemove = _breaks.Select(keyPair => keyPair.Key).Where(date => date < DateTime.Now)
+                .ToImmutableList();
 
             foreach (var date in breaksToRemove) _breaks.Remove(date);
 
@@ -104,11 +101,10 @@ namespace break_bot
             RemovePassedBreaks();
             while (true)
             {
-                if (_breaks.Count == 0)
-                {
-                    _breaks = GetDefaultBreaks(DateTime.Today + new TimeSpan(1, 0, 0, 0));
-                }
-                
+                // If we have no more breaks for today add the default breaks for tomorrow.
+                // This is broken if the user adds a break that is not today, but its not possible right now.
+                if (_breaks.Count == 0) _breaks = GetDefaultBreaks(DateTime.Today + new TimeSpan(1, 0, 0, 0));
+
                 var (date, timeSpan) = GetNextBreak();
 
                 var timeToNextBreak = TimeToNextBreak(date);
@@ -116,10 +112,12 @@ namespace break_bot
                 // If a break is added or removed stop the delay, and find the closest break again.
                 try
                 {
+                    Console.WriteLine(timeToNextBreak);
                     await Task.Delay(timeToNextBreak, _cancellationTokenSource.Token);
                 }
                 catch (TaskCanceledException)
                 {
+                    _cancellationTokenSource = new CancellationTokenSource();
                     continue;
                 }
 

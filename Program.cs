@@ -41,7 +41,7 @@ namespace break_bot
         private async Task OnBreakAsync(SchedulerEventArgs eventArgs)
         {
             var guild = _client.GetGuild(GuildId);
-            var hasUser = guild.Channels.SelectMany(x => x.Users).Any(user => !user.IsSelfDeafened);
+            var hasUser = guild.Channels.Where(c => c is SocketVoiceChannel).SelectMany(x => x.Users).Any(user => !user.IsSelfDeafened);
 
             if (!hasUser) return;
             
@@ -60,7 +60,6 @@ namespace break_bot
             if (!(rawMessage is SocketUserMessage)) return;
             var message = (SocketUserMessage) rawMessage;
             if (message.Channel.Id != ChannelId) return;
-            
             
             
             int argPos = 0;
