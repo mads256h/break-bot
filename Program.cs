@@ -9,7 +9,7 @@ namespace break_bot
 {
     internal class Program
     {
-        private const string Token = "ODExNTA3NDY2Mzg2MDE0MjE4.YCzNOQ._i9f1kxBxoiCIrg6-DFHeYia_3Y";
+        private readonly string _token;
         private readonly DiscordSocketClient _client;
 
         private readonly ManualResetEvent _onReadyEvent = new ManualResetEvent(false);
@@ -20,6 +20,7 @@ namespace break_bot
 
         private Program()
         {
+            _token = Environment.GetEnvironmentVariable("TOKEN") ?? throw new InvalidOperationException();
             _timer = new Timer(TimerCallback, null, Timeout.InfiniteTimeSpan, new TimeSpan(0, 0, 30));
             _client = new DiscordSocketClient();
 
@@ -82,7 +83,7 @@ namespace break_bot
 
         private async Task MainAsync()
         {
-            await _client.LoginAsync(TokenType.Bot, Token);
+            await _client.LoginAsync(TokenType.Bot, _token);
             await _client.StartAsync();
 
 
