@@ -1,8 +1,9 @@
 ﻿using System;
-using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Discord;
+using Discord.Commands;
 using Discord.WebSocket;
 
 namespace break_bot
@@ -12,73 +13,85 @@ namespace break_bot
         private readonly string _token;
         private readonly DiscordSocketClient _client;
 
-        private readonly ManualResetEvent _onReadyEvent = new ManualResetEvent(false);
+        private readonly Scheduler _scheduler;
 
-        private readonly Timer _timer;
+        private readonly ManualResetEvent _readyEvent = new ManualResetEvent(false);
 
-        private int _lastHour = 0;
+        private const ulong ChannelId = 811515354169344001;
+        private const ulong GuildId = 804075956225703997;
+
 
         private Program()
         {
             _token = Environment.GetEnvironmentVariable("TOKEN") ?? throw new InvalidOperationException();
-            _timer = new Timer(TimerCallback, null, Timeout.InfiniteTimeSpan, new TimeSpan(0, 0, 30));
+            _scheduler = new Scheduler();
+            _scheduler.OnBreak += OnBreakAsync;
             _client = new DiscordSocketClient();
 
             _client.Log += message => Console.Out.WriteLineAsync(message.ToString());
             _client.Ready += OnReadyAsync;
         }
 
-        private void TimerCallback(object? state)
-        {
-            var now = DateTime.Now;
-            var howLong = 0;
-            if (now.Minute == 0)
-            {
-                switch (now.Hour)
-                {
-                    case 10:
-                    case 11:
-                    case 14:
-                        howLong = 5;
-                        break;
-                    case 12:
-                        howLong = 30;
-                        break;
-                }
-            }
-
-            if (howLong == 0) return;
-
-            bool foundUser = false;
-
-            foreach (var guild in _client.Guilds)
-            foreach (var channel in guild.Channels)
-                if (channel is SocketVoiceChannel voiceChannel)
-                    foreach (var user in voiceChannel.Users)
-                    {
-                        if (user.IsSelfDeafened) continue;
-                        foundUser = true;
-                        goto stopLoop;
-                    }
-
-            stopLoop:
-            if (foundUser && _lastHour != now.Hour)
-            {
-                ((SocketTextChannel) _client.GetChannel(811515354169344001)).SendMessageAsync(
-                    $"Pause {now.Hour:00}:{now.Minute:00} - {now.Hour:00}:{howLong:00}").GetAwaiter().GetResult();
-                _lastHour = now.Hour;
-            }
-        }
 
         private static void Main(string[] args)
         {
             new Program().MainAsync().GetAwaiter().GetResult();
         }
 
+        private async Task OnBreakAsync(SchedulerEventArgs eventArgs)
+        {
+            var guild = _client.GetGuild(GuildId);
+            var hasUser = guild.Channels.SelectMany(x => x.Users).Any(user => !user.IsSelfDeafened);
+
+            if (!hasUser) return;
+            
+            var str = $"Pause {eventArgs.DateTime:HH:mm} - {eventArgs.DateTime + eventArgs.TimeSpan:HH:mm}";
+            await Console.Out.WriteLineAsync(str);
+            await ((SocketTextChannel) _client.GetChannel(ChannelId)).SendMessageAsync(str);
+        }
+
         private async Task OnReadyAsync()
         {
-            // Start timer
-            _timer.Change(TimeSpan.Zero, new TimeSpan(0, 0, 5));
+            _readyEvent.Set();
+        }
+
+        private async Task OnMessageReceived(SocketMessage rawMessage)
+        {
+            if (!(rawMessage is SocketUserMessage)) return;
+            var message = (SocketUserMessage) rawMessage;
+            if (message.Channel.Id != ChannelId) return;
+            
+            
+            
+            int argPos = 0;
+
+            if (message.HasStringPrefix("!list", ref argPos))
+            {
+                await message.Channel.SendMessageAsync(_scheduler.GetBreaks());
+            }
+            else if (message.HasStringPrefix("!add", ref argPos))
+            {
+                var split = message.Content.Substring(argPos).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (split.Length != 2)
+                {
+                    
+                }
+                else
+                {
+                    if (!Scheduler.FromString(split[0], out DateTime start)) return;
+                    if (!Scheduler.FromString(split[1], out TimeSpan length)) return;
+
+                    _scheduler.AddBreak(start, length);
+                }
+            }
+            else if (message.HasStringPrefix("!remove", ref argPos))
+            {
+                var str = message.Content.Substring(argPos);
+
+                if (!Scheduler.FromString(str, out DateTime start)) return;
+
+                _scheduler.RemoveBreak(start);
+            }
         }
 
         private async Task MainAsync()
@@ -86,8 +99,12 @@ namespace break_bot
             await _client.LoginAsync(TokenType.Bot, _token);
             await _client.StartAsync();
 
+            _client.MessageReceived += OnMessageReceived;
 
-            await Task.Delay(Timeout.Infinite);
+
+            _readyEvent.WaitOne();
+            
+            await _scheduler.Start();
         }
     }
 }
