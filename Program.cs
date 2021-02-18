@@ -50,15 +50,15 @@ namespace break_bot
             await ((SocketTextChannel) _client.GetChannel(ChannelId)).SendMessageAsync(str);
         }
 
-        private async Task OnReadyAsync()
+        private Task OnReadyAsync()
         {
             _readyEvent.Set();
+            return Task.CompletedTask;
         }
 
         private async Task OnMessageReceived(SocketMessage rawMessage)
         {
-            if (!(rawMessage is SocketUserMessage)) return;
-            var message = (SocketUserMessage) rawMessage;
+            if (!(rawMessage is SocketUserMessage message)) return;
             if (message.Channel.Id != ChannelId) return;
             
             
@@ -73,14 +73,13 @@ namespace break_bot
                 var split = message.Content.Substring(argPos).Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (split.Length != 2)
                 {
-                    
                 }
                 else
                 {
                     if (!Scheduler.FromString(split[0], out DateTime start)) return;
                     if (!Scheduler.FromString(split[1], out TimeSpan length)) return;
 
-                    _scheduler.AddBreak(start, length);
+                    if (_scheduler.AddBreak(start, length)) await message.AddReactionAsync(new Emoji("✅"));
                 }
             }
             else if (message.HasStringPrefix("!remove", ref argPos))
@@ -89,7 +88,7 @@ namespace break_bot
 
                 if (!Scheduler.FromString(str, out DateTime start)) return;
 
-                _scheduler.RemoveBreak(start);
+                if (_scheduler.RemoveBreak(start)) await message.AddReactionAsync(new Emoji("✅"));
             }
         }
 
