@@ -1,0 +1,24 @@
+[Unit]
+Description=break-bot
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+DynamicUser=true
+ProtectProc="invisible"
+ProtectHome=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+Environment="TOKEN=changeme" "GUILDID=changeme" "CHANNELID=changeme"
+ExecStart=/usr/bin/break-bot
+

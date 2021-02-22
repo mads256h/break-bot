@@ -17,13 +17,39 @@ namespace break_bot
 
         private readonly ManualResetEvent _readyEvent = new ManualResetEvent(false);
 
-        private const ulong ChannelId = 811515354169344001;
-        private const ulong GuildId = 804075956225703997;
+        private readonly ulong _channelId;
+        private readonly ulong _guildId;
 
+        private static Tuple<string, ulong, ulong> ParseEnvironment()
+        {
+            var token = Environment.GetEnvironmentVariable("TOKEN");
+
+            if (token == null)
+            {
+                Console.Error.WriteLine("TOKEN is not defined");
+                Environment.Exit(1);
+            }
+
+
+            if (!ulong.TryParse(Environment.GetEnvironmentVariable("GUILDID"), out var guildId))
+            {
+                Console.Error.WriteLine("GUILDID is not defined");
+                Environment.Exit(1);
+            }
+            
+            if (!ulong.TryParse(Environment.GetEnvironmentVariable("CHANNELID"), out var channelId))
+            {
+                Console.Error.WriteLine("CHANNELID is not defined");
+                Environment.Exit(1);
+            }
+
+            return new Tuple<string, ulong, ulong>(token, guildId, channelId);
+        }
 
         private Program()
         {
-            _token = Environment.GetEnvironmentVariable("TOKEN") ?? throw new InvalidOperationException();
+            (_token, _guildId, _channelId) = ParseEnvironment();
+            
             _scheduler = new Scheduler();
             _scheduler.OnBreak += OnBreakAsync;
             _client = new DiscordSocketClient();
@@ -40,14 +66,14 @@ namespace break_bot
 
         private async Task OnBreakAsync(SchedulerEventArgs eventArgs)
         {
-            var guild = _client.GetGuild(GuildId);
+            var guild = _client.GetGuild(_guildId);
             var hasUser = guild.Channels.Where(c => c is SocketVoiceChannel).SelectMany(x => x.Users).Any(user => !user.IsSelfDeafened);
 
             if (!hasUser) return;
             
             var str = $"Pause {eventArgs.DateTime:HH:mm} - {eventArgs.DateTime + eventArgs.TimeSpan:HH:mm}";
             await Console.Out.WriteLineAsync(str);
-            await ((SocketTextChannel) _client.GetChannel(ChannelId)).SendMessageAsync(str);
+            await ((SocketTextChannel) _client.GetChannel(_channelId)).SendMessageAsync(str);
         }
 
         private Task OnReadyAsync()
@@ -59,7 +85,7 @@ namespace break_bot
         private async Task OnMessageReceived(SocketMessage rawMessage)
         {
             if (!(rawMessage is SocketUserMessage message)) return;
-            if (message.Channel.Id != ChannelId) return;
+            if (message.Channel.Id != _channelId) return;
             
             
             int argPos = 0;
